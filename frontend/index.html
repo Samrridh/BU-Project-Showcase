@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FindMyCampus Prototype</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+
+<body class="bg-gray-100 min-h-screen">
+  <header class="bg-blue-600 text-white p-4 text-center text-2xl font-semibold shadow">
+    CampusTrack (Bennett) – Lost & Found Prototype
+  </header>
+
+  <main class="p-4 max-w-4xl mx-auto">
+    <!-- Upload Form -->
+    <div class="bg-white p-4 rounded-xl shadow mb-4">
+      <h2 class="text-xl font-bold mb-2">Report Item</h2>
+      <p id="geoStatus" class="text-sm text-gray-600 mb-2">Detecting location...</p>
+
+      <input id="itemPhoto" type="file" accept="image/*" class="mb-3" />
+      <input id="itemDesc" type="text" placeholder="Item description"
+        class="w-full p-2 border rounded mb-3" />
+
+      <button onclick="addItem()"
+        class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+        Submit
+      </button>
+    </div>
+
+    <!-- Map -->
+    <div id="map" class="w-full h-80 rounded-xl shadow mb-4"></div>
+
+    <!-- Item List -->
+    <div class="bg-white p-4 rounded-xl shadow">
+      <h2 class="text-xl font-bold mb-2">Reported Items</h2>
+      <div id="itemsList"></div>
+    </div>
+  </main>
+
+  <script>
+    let userLat = null;
+    let userLng = null;
+    let map;
+    let markers = [];
+
+    // Initialize map
+    function initMap() {
+      map = L.map('map').setView([20.5937, 78.9629], 5);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+      }).addTo(map);
+    }
+
+    // Detect geolocation
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        userLat = pos.coords.latitude;
+        userLng = pos.coords.longitude;
+        document.getElementById("geoStatus").innerText = `Location detected: ${userLat.toFixed(4)}, ${userLng.toFixed(4)}`;
+        map.setView([userLat, userLng], 16);
+      },
+      () => {
+        document.getElementById("geoStatus").innerText = "Could not detect location";
+      }
+    );
+
+    // Add item
+    function addItem() {
+      const photoFile = document.getElementById("itemPhoto").files[0];
+      const desc = document.getElementById("itemDesc").value.trim();
+
+      if (!photoFile || !desc || userLat === null) {
+        alert("Please fill all fields and allow location.");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const item = {
+          id: Date.now(),
+          desc,
+          photo: e.target.result,
+          lat: userLat,
+          lng: userLng,
+          chat: []
+        };
+
+        const items = JSON.parse(localStorage.getItem("items") || "[]");
+        items.push(item);
+        localStorage.setItem("items", JSON.stringify(items));
+
+        renderItems();
+      };
+
+      reader.readAsDataURL(photoFile);
+    }
+
+    // Render items + map markers
+    function renderItems() {
+      const list = document.getElementById("itemsList");
+      list.innerHTML = "";
+
+      // Clear old markers
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+
+      const items = JSON.parse(localStorage.getItem("items") || "[]");
+
+      items.forEach((item) => {
+        // Add marker
+        const marker = L.marker([item.lat, item.lng]).addTo(map);
+        marker.bindPopup(item.desc);
+        markers.push(marker);
+
+        // Item card
+        const div = document.createElement("div");
+        div.className = "p-4 mb-3 border rounded-xl shadow";
+
+        div.innerHTML = `
+          <img src="${item.photo}" class="w-32 h-32 object-cover rounded mb-2" />
+          <p class="font-semibold">${item.desc}</p>
+          <p class="text-sm text-gray-600">Location: ${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}</p>
+
+          <div class="mt-2">
+            <input id="chat-${item.id}" type="text" placeholder="Message"
+              class="p-2 w-full border rounded mb-2" />
+            <button onclick="sendChat(${item.id})"
+              class="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">Send</button>
+          </div>
+
+          <div class="mt-3 bg-gray-100 p-2 rounded">
+            <h4 class="font-semibold">Chat</h4>
+            <div id="chatBox-${item.id}" class="text-sm"></div>
+          </div>
+
+          <button onclick="resolveItem(${item.id})"
+            class="mt-3 bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">Mark as Resolved</button>
+        `;
+
+        list.appendChild(div);
+
+        // Render chat
+        const chatBox = document.getElementById(`chatBox-${item.id}`);
+        item.chat.forEach(c => {
+          const p = document.createElement("p");
+          p.textContent = c;
+          chatBox.appendChild(p);
+        });
+      });
+    }
+
+    // Send chat message
+    function sendChat(id) {
+      const input = document.getElementById(`chat-${id}`);
+      const text = input.value.trim();
+      if (!text) return;
+
+      const items = JSON.parse(localStorage.getItem("items") || "[]");
+      const item = items.find(i => i.id === id);
+      item.chat.push(text);
+      localStorage.setItem("items", JSON.stringify(items));
+
+      renderItems();
+    }
+
+    // Resolve item
+    function resolveItem(id) {
+      const items = JSON.parse(localStorage.getItem("items") || "[]");
+      const filtered = items.filter(i => i.id !== id);
+      localStorage.setItem("items", JSON.stringify(filtered));
+      renderItems();
+    }
+
+    initMap();
+    renderItems();
+  </script>
+</body>
+</html>
