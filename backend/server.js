@@ -7,12 +7,22 @@ const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
-const io = require('socket.io')(server, { cors: { origin: "*" } });
+
+const io = require('socket.io')(server, {
+  cors: { origin: "*" }
+});
 
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Ensure uploads folder exists
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
+
+// Serve uploaded photos
+app.use('/uploads', express.static(uploadsDir));
+
+// JSON file for items
 const itemsFile = path.join(__dirname, 'items.json');
 fs.ensureFileSync(itemsFile);
 
@@ -21,16 +31,16 @@ if (fs.existsSync(itemsFile)) {
   items = JSON.parse(fs.readFileSync(itemsFile, 'utf8') || "[]");
 }
 
-// Photo upload setup
+// Multer upload setup
 const upload = multer({
   storage: multer.diskStorage({
-    destination: "uploads/",
+    destination: uploadsDir,
     filename: (req, file, cb) =>
       cb(null, Date.now() + path.extname(file.originalname))
   })
 });
 
-// POST: create item
+// POST item
 app.post('/api/items', upload.single('photo'), (req, res) => {
   const { title, description, lat, lng } = req.body;
 
@@ -49,19 +59,21 @@ app.post('/api/items', upload.single('photo'), (req, res) => {
   res.json(newItem);
 });
 
-// GET: all items
+// GET all items
 app.get('/api/items', (req, res) => {
   res.json(items);
 });
 
-// GET: single item
+// GET single item
 app.get('/api/items/:id', (req, res) => {
   const item = items.find(i => i.id == req.params.id);
   res.json(item || {});
 });
 
-// SOCKET.IO CHAT
+// SOCKET.IO chat
 io.on("connection", socket => {
+  console.log("Client connected");
+
   socket.on("joinRoom", (itemId) => {
     socket.join("room_" + itemId);
   });
@@ -79,4 +91,7 @@ io.on("connection", socket => {
   });
 });
 
-server.listen(4000, () => console.log("Backend running on 4000"));
+// Render gives PORT env variable
+const PORT = process.env.PORT || 4000;
+
+server.listen(PORT, () => console.log("Backend running on " + PORT));

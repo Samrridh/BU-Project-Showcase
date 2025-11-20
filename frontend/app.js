@@ -1,4 +1,5 @@
-const API = "http://localhost:4000/api";
+// 🔥 IMPORTANT: Replace with your Render backend URL
+const API = "https://bu-project-showcase.onrender.com";
 
 async function submitItem() {
   const form = new FormData();
@@ -13,9 +14,11 @@ async function submitItem() {
   loadItems();
 }
 
+// MAP
 let map = L.map("map").setView([28.61, 77.21], 13);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 
+// LOAD ITEMS
 async function loadItems() {
   const res = await fetch(API + "/items");
   const data = await res.json();
@@ -24,12 +27,14 @@ async function loadItems() {
   data.forEach(item => {
     let card = document.createElement("div");
     card.className = "card";
+
     card.innerHTML = `
       <h4>${item.title}</h4>
-      <img src="http://localhost:4000${item.photo}" width="120">
+      <img src="https://your-backend-name.onrender.com${item.photo}" width="150">
       <p>${item.description}</p>
       <button onclick="openChat(${item.id})">Chat</button>
     `;
+
     document.getElementById("items").appendChild(card);
 
     L.marker([item.location.lat, item.location.lng])
@@ -40,8 +45,8 @@ async function loadItems() {
 
 loadItems();
 
-// ---------------- CHAT ----------------
 
+// ---------------- CHAT ----------------
 let currentSocket = null;
 
 function openChat(id) {
@@ -50,7 +55,8 @@ function openChat(id) {
 
   if (currentSocket) currentSocket.disconnect();
 
-  currentSocket = io("http://localhost:4000");
+  // Connect to Render WebSocket backend
+  currentSocket = io("https://your-backend-name.onrender.com");
   currentSocket.emit("joinRoom", id);
 
   const chatDiv = document.createElement("div");
@@ -61,7 +67,6 @@ function openChat(id) {
     <input id="chatInput" placeholder="Message">
     <button onclick="sendChat(${id}, '${username}')">Send</button>
   `;
-
   document.body.appendChild(chatDiv);
 
   currentSocket.on("chatMessage", msg => {
