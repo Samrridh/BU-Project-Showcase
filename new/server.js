@@ -5,7 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 
-// Multer memory storage (we'll keep file in RAM and convert to dataURL)
+
 const upload = multer({ storage: multer.memoryStorage() });
 
 const app = express();
@@ -18,20 +18,15 @@ app.use(express.json());
 // Serve static frontend from "public" folder
 app.use(express.static(path.join(__dirname, 'public')));
 
-// In-memory store
+
 const items = [];
 
-/*
- Seeded example item — using the local uploaded file path you provided.
- Your tooling can transform this local path to a hosted URL if needed.
-*/
+// example data
 items.push({
   id: 'seed-1',
   title: 'Seeded: Blue backpack',
   description: 'Sample seeded item',
-  // <-- your uploaded path as requested (will be served as-is in the response)
-  // Transform to a data URL or hosted URL during your deploy if you need it publicly accessible.
-  photo: '/mnt/data/433f9e27-efa7-4eea-b25f-cdc423730e1b.png',
+  photo: 'cdc423730e1b.png',
   location: { lat: 28.7041, lng: 77.1025 },
   messages: []
 });

@@ -1,16 +1,11 @@
-// public/app.js
 (async () => {
-  // API base is same origin
   const API = '/api';
 
-  // Setup map
   const map = L.map('map').setView([28.61, 77.21], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-  // socket.io connect to same origin
   const socket = io();
 
-  // Geolocation
   let userLat = null, userLng = null;
   navigator.geolocation.getCurrentPosition(
     (pos) => {
@@ -24,7 +19,6 @@
 
   const markers = {};
 
-  // Fetch and render items
   async function loadItems() {
     const res = await fetch(API + '/items');
     const items = await res.json();
@@ -34,18 +28,15 @@
   function renderItems(items) {
     const container = document.getElementById('itemsList');
     container.innerHTML = '';
-    // clear markers
     Object.values(markers).forEach(m => map.removeLayer(m));
     Object.keys(markers).forEach(k => delete markers[k]);
 
     items.forEach(item => {
-      // marker
       const lat = item.location?.lat || 0;
       const lng = item.location?.lng || 0;
       const marker = L.marker([lat, lng]).addTo(map).bindPopup(item.title || item.description || '');
       markers[item.id] = marker;
 
-      // card
       const card = document.createElement('div');
       card.className = 'p-3 border rounded flex gap-3';
 
@@ -77,7 +68,6 @@
       });
     });
 
-    // attach handlers
     document.querySelectorAll('.focusMarkerBtn').forEach(btn => {
       btn.onclick = () => {
         const id = btn.getAttribute('data-id');
@@ -94,11 +84,8 @@
     });
   }
 
-  // When server emits newItem, append immediately
   socket.on('newItem', (item) => {
-    // Simply reload everything (or append)
     loadItems();
-    // Optional: show a toast
     console.log('New item:', item.title || item.description);
   });
 
@@ -113,7 +100,7 @@
     }
   });
 
-  // Submit form (multipart with photo)
+
   document.getElementById('postBtn').addEventListener('click', async () => {
     const title = document.getElementById('title').value.trim();
     const description = document.getElementById('description').value.trim();
@@ -140,18 +127,18 @@
       alert('Upload failed');
       return;
     }
-    // clear form
+
     document.getElementById('title').value = '';
     document.getElementById('description').value = '';
     document.getElementById('photo').value = '';
 
-    // server will broadcast newItem via socket and loadItems will be called by the handler
+
   });
 
-  // Refresh button
+
   document.getElementById('refreshBtn').addEventListener('click', loadItems);
 
-  // Chat UI (opens a small dialog)
+
   let openChatRoomId = null;
   function openChat(itemId) {
     openChatRoomId = itemId;
@@ -166,7 +153,7 @@
       textInput.value = '';
     };
 
-    // join room via socket
+
     socket.emit('joinRoom', itemId);
   }
 
@@ -193,6 +180,5 @@
     return s.replace(/[&<"']/g, m => ({ '&':'&amp;','<':'&lt;','"':'&quot;',"'":'&#039;'}[m]));
   }
 
-  // initial load
   loadItems();
 })();

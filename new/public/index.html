@@ -1,59 +1,264 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>FindMyCampus — In-memory demo</title>
-
-  <!-- Tailwind (via CDN for prototype) -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FindMyCampus Prototype</title>
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
   <style>
-    #map { height: 420px; border-radius: 8px; }
-    .chat { position: fixed; right: 16px; bottom: 16px; width: 320px; background: white; border: 1px solid #ddd; padding: 12px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
-    .chatbox { height: 160px; overflow-y: auto; background:#f8fafc; padding:6px; border-radius:6px; }
+    /* small map marker fix for leaflet icons when using CDN */
+    .leaflet-container { height: 100%; width: 100%; }
+    .modal-open { overflow: hidden; }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
-
-  <header class="bg-blue-600 text-white p-4 text-xl font-semibold text-center">
-    FindMyCampus — Live (In-memory) Prototype
+  <header class="bg-blue-600 text-white p-4 text-center text-2xl font-semibold shadow">
+    FindMyCampus – Lost & Found Prototype
   </header>
 
-  <main class="max-w-4xl mx-auto p-4">
-    <section class="bg-white p-4 rounded shadow mb-4">
-      <h2 class="font-bold mb-2">Report an item (auto geotag)</h2>
-      <p id="geoStatus" class="text-sm text-gray-600 mb-2">Detecting location…</p>
+  <main class="p-4 max-w-4xl mx-auto">
+    <!-- Upload Form -->
+    <div class="bg-white p-4 rounded-xl shadow mb-4">
+      <h2 class="text-xl font-bold mb-2">Report Item</h2>
+      <p id="geoStatus" class="text-sm text-gray-600 mb-2">Detecting location...</p>
 
-      <div class="grid grid-cols-1 gap-2">
-        <input id="title" class="p-2 border rounded" placeholder="Title (e.g., Blue backpack)"/>
-        <input id="description" class="p-2 border rounded" placeholder="Short description"/>
-        <input id="photo" type="file" accept="image/*" class="p-2"/>
-        <div class="flex gap-2">
-          <button id="postBtn" class="bg-blue-600 text-white px-4 py-2 rounded">Submit</button>
-          <button id="refreshBtn" class="bg-gray-200 px-4 py-2 rounded">Refresh Items</button>
-        </div>
+      <input id="itemPhoto" type="file" accept="image/*" class="mb-3 block" />
+      <input id="itemDesc" type="text" placeholder="Item description" class="w-full p-2 border rounded mb-3" />
+
+      <div class="flex gap-2">
+        <button id="useMyLocation" class="bg-gray-200 px-3 py-2 rounded">Use my location</button>
+        <button id="submitBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">Submit</button>
       </div>
-    </section>
+    </div>
 
-    <section class="mb-4">
-      <div id="map" class="shadow"></div>
-    </section>
+    <!-- Map -->
+    <div id="map" class="w-full h-80 rounded-xl shadow mb-4"></div>
 
-    <section class="bg-white p-4 rounded shadow">
-      <h3 class="font-bold mb-2">Items</h3>
+    <!-- Item List -->
+    <div class="bg-white p-4 rounded-xl shadow">
+      <h2 class="text-xl font-bold mb-2">Reported Items</h2>
       <div id="itemsList" class="space-y-3"></div>
-    </section>
+    </div>
   </main>
 
-  <!-- Leaflet JS -->
+  <!-- Image Zoom Modal -->
+  <div id="imgModal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center hidden z-50">
+    <img id="modalImg" class="max-w-[90%] max-h-[90%] rounded shadow-lg" />
+  </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Socket.io client -->
-  <script src="/socket.io/socket.io.js"></script>
-  <!-- App JS -->
-  <script src="app.js"></script>
+  <script>
+    // --- State ---
+    let userLat = null;
+    let userLng = null;
+    let map;
+    let markers = [];
+
+    // --- Helpers ---
+    function byId(id){ return document.getElementById(id); }
+    function saveItems(items){ localStorage.setItem('items', JSON.stringify(items)); }
+    function loadItems(){ return JSON.parse(localStorage.getItem('items') || '[]'); }
+
+    // --- Initialize Map ---
+    function initMap() {
+      map = L.map('map').setView([20.5937, 78.9629], 5);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    }
+
+    // --- Geolocation ---
+    function detectLocation(showMessage=true){
+      if (!navigator.geolocation) {
+        if (showMessage) byId('geoStatus').innerText = 'Geolocation not supported by your browser.';
+        return;
+      }
+      byId('geoStatus').innerText = 'Detecting location...';
+      navigator.geolocation.getCurrentPosition((pos) => {
+        userLat = pos.coords.latitude;
+        userLng = pos.coords.longitude;
+        byId('geoStatus').innerText = `Location detected: ${userLat.toFixed(4)}, ${userLng.toFixed(4)}`;
+        if (map) map.setView([userLat, userLng], 16);
+      }, (err) => {
+        byId('geoStatus').innerText = 'Could not detect location (permission denied or unavailable).';
+      }, { enableHighAccuracy: true, timeout: 10000 });
+    }
+
+    // --- Render Items & Markers ---
+    function clearMarkers(){ markers.forEach(m => map.removeLayer(m)); markers = []; }
+
+    function renderItems(){
+      const list = byId('itemsList');
+      list.innerHTML = '';
+      clearMarkers();
+
+      const items = loadItems();
+      items.forEach(item => {
+        // Marker
+        try {
+          const marker = L.marker([item.lat, item.lng]).addTo(map);
+          marker.bindPopup(`<strong>${escapeHtml(item.desc)}</strong><br>${new Date(item.id).toLocaleString()}`);
+          markers.push(marker);
+        } catch (e) { console.warn('Marker failed', e); }
+
+        // Card
+        const card = document.createElement('div');
+        card.className = 'p-4 mb-3 border rounded-xl shadow flex gap-4 items-start';
+
+        const img = document.createElement('img');
+        img.src = item.photo;
+        img.alt = item.desc;
+        img.className = 'w-32 h-32 object-cover rounded cursor-pointer';
+        img.onclick = () => openModal(item.photo);
+
+        const content = document.createElement('div');
+        content.className = 'flex-1';
+
+        const title = document.createElement('p');
+        title.className = 'font-semibold';
+        title.textContent = item.desc;
+
+        const loc = document.createElement('p');
+        loc.className = 'text-sm text-gray-600';
+        loc.textContent = `Location: ${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}`;
+
+        const actions = document.createElement('div');
+        actions.className = 'mt-2 flex gap-2 flex-wrap';
+
+        const chatInput = document.createElement('input');
+        chatInput.type = 'text';
+        chatInput.placeholder = 'Message (anonymous)';
+        chatInput.className = 'p-2 border rounded w-full sm:w-auto flex-1';
+        chatInput.id = `chat-${item.id}`;
+
+        const sendBtn = document.createElement('button');
+        sendBtn.className = 'bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700';
+        sendBtn.textContent = 'Send';
+        sendBtn.onclick = () => { sendChat(item.id); };
+
+        const foundBtn = document.createElement('button');
+        foundBtn.className = 'bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700';
+        foundBtn.textContent = 'Mark as Found';
+        foundBtn.onclick = () => { markAsFound(item.id); };
+
+        actions.appendChild(chatInput);
+        actions.appendChild(sendBtn);
+        actions.appendChild(foundBtn);
+
+        const chatBox = document.createElement('div');
+        chatBox.className = 'mt-3 bg-gray-100 p-2 rounded max-h-40 overflow-y-auto';
+        chatBox.id = `chatBox-${item.id}`;
+        (item.chat || []).forEach(c => {
+          const p = document.createElement('p');
+          p.className = 'text-sm';
+          p.textContent = c;
+          chatBox.appendChild(p);
+        });
+
+        content.appendChild(title);
+        content.appendChild(loc);
+        content.appendChild(actions);
+        content.appendChild(chatBox);
+
+        card.appendChild(img);
+        card.appendChild(content);
+
+        list.appendChild(card);
+      });
+    }
+
+    // --- Chat ---
+    function sendChat(id){
+      const input = byId(`chat-${id}`);
+      if (!input) return;
+      const text = input.value.trim();
+      if (!text) return;
+      const items = loadItems();
+      const idx = items.findIndex(i => i.id === id);
+      if (idx === -1) return;
+      items[idx].chat = items[idx].chat || [];
+      items[idx].chat.push(text);
+      saveItems(items);
+      input.value = '';
+      renderItems();
+      // Scroll chatBox to bottom
+      setTimeout(() => {
+        const cb = byId(`chatBox-${id}`);
+        if (cb) cb.scrollTop = cb.scrollHeight;
+      }, 50);
+    }
+
+    // --- Mark as Found ---
+    function markAsFound(id){
+      if (!confirm('Mark this item as found and remove from map?')) return;
+      let items = loadItems();
+      items = items.filter(i => i.id !== id);
+      saveItems(items);
+      renderItems();
+      alert('Marked as found.');
+    }
+
+    // --- Add Item ---
+    function addItem(){
+      const fileInput = byId('itemPhoto');
+      const desc = byId('itemDesc').value.trim();
+      if (!fileInput.files || fileInput.files.length === 0) { alert('Please choose a photo'); return; }
+      if (!desc) { alert('Please enter a description'); return; }
+      if (userLat === null || userLng === null) { alert('Location not set. Click "Use my location" or allow geolocation.'); return; }
+
+      const file = fileInput.files[0];
+      const reader = new FileReader();
+      reader.onload = function(e){
+        const items = loadItems();
+        const newItem = {
+          id: Date.now(),
+          desc,
+          photo: e.target.result,
+          lat: userLat,
+          lng: userLng,
+          chat: []
+        };
+        items.unshift(newItem); // newest first
+        saveItems(items);
+        // reset form
+        byId('itemDesc').value = '';
+        fileInput.value = '';
+        renderItems();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // --- Image Modal ---
+    function openModal(src){
+      const modal = byId('imgModal');
+      const img = byId('modalImg');
+      img.src = src;
+      modal.classList.remove('hidden');
+      document.body.classList.add('modal-open');
+    }
+    (function(){
+      const modal = byId('imgModal');
+      modal && modal.addEventListener('click', () => { modal.classList.add('hidden'); document.body.classList.remove('modal-open'); });
+    })();
+
+    // --- Utilities ---
+    function escapeHtml(unsafe) {
+      return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // --- Init ---
+    initMap();
+    detectLocation();
+    renderItems();
+
+    // --- Event listeners ---
+    byId('submitBtn').addEventListener('click', addItem);
+    byId('useMyLocation').addEventListener('click', () => detectLocation(true));
+
+  </script>
 </body>
 </html>
